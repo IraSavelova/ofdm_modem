@@ -42,14 +42,12 @@ class TxWorker(threading.Thread):
         output_wav: str,
         pcm_queue: queue.Queue,
         stop_event: threading.Event,
-        loopback_queue: queue.Queue | None = None,  
     ) -> None:
         super().__init__(daemon=True)
         self.cfg = cfg
         self.input_file = input_file
         self.output_wav = output_wav
         self.pcm_queue = pcm_queue
-        self.loopback_queue = loopback_queue
         self.stop_event = stop_event
         self.error: str | None = None
         self.session = None
@@ -84,9 +82,6 @@ class TxWorker(threading.Thread):
                     wav.write(pcm)
                     self.pcm_queue.put(pcm)
 
-                    if self.loopback_queue is not None:
-                        self.loopback_queue.put(pcm.copy())
-
         except Exception as e:
             self.error = str(e)
         finally:
@@ -101,8 +96,6 @@ class TxWorker(threading.Thread):
 
             self.pcm_queue.put(None)
 
-            if self.loopback_queue is not None:
-                self.loopback_queue.put(None)
 
 class RxWorker(threading.Thread):
     def __init__(self, cfg, output_file, pcm_queue, stop_event):
@@ -146,6 +139,7 @@ class RxWorker(threading.Thread):
             if self.session is not None:
                 modem_rx.destroy_decoder_session(self.session)
 
+
 class RealtimePlayer:
     def __init__(
         self,
@@ -172,6 +166,7 @@ class RealtimePlayer:
             callback=self.callback,
             blocksize=1024,
         )
+
     def callback(self, outdata, frames, time_info, status) -> None:
         if status:
             print("Audio status:", status)
@@ -207,6 +202,7 @@ class RealtimePlayer:
     def stop(self) -> None:
         self.stream.stop()
         self.stream.close()
+
 
 class RealtimeRecorder:
     def __init__(
@@ -246,6 +242,7 @@ class RealtimeRecorder:
         self.stream.stop()
         self.stream.close()
 
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -261,8 +258,6 @@ class MainWindow(QMainWindow):
         self.rx_queue: queue.Queue | None = None
         self.rx_stop_event: threading.Event | None = None
         self.rx_output_file: str | None = None
-
-        self.rx_loop_queue: queue.Queue | None = None
 
         self._build_ui()
         self._build_menu()
@@ -407,6 +402,7 @@ class MainWindow(QMainWindow):
         cfg.center_freq_hz = ui_cfg.carrier_freq
         cfg.output_path = ""
         return cfg
+
     def on_start_tx(self) -> None:
         try:
             ui_cfg = self.params_panel.get_config()
@@ -425,30 +421,17 @@ class MainWindow(QMainWindow):
             if not output_file:
                 return
 
-            # decoded_file = str(Path(output_file).with_suffix(".decoded.bin"))
+            cfg = self.build_stream_cfg(ui_cfg)
 
-            # cfg = self.build_stream_cfg(ui_cfg)
+            self.tx_queue = queue.Queue(maxsize=16)
+            self.tx_stop_event = threading.Event()
 
-            # self.tx_queue = queue.Queue(maxsize=16)
-            # self.rx_loop_queue = queue.Queue(maxsize=16) 
-            # self.tx_stop_event = threading.Event()
-
-            # # RX worker
-            # self.rx_worker = RxWorker(
-            #     cfg=cfg,
-            #     output_file=decoded_file,
-            #     pcm_queue=self.rx_loop_queue,
-            #     stop_event=self.tx_stop_event,
-            # )
-
-            # TX worker
             self.tx_worker = TxWorker(
                 cfg=cfg,
                 input_file=input_file,
                 output_wav=output_file,
                 pcm_queue=self.tx_queue,
                 stop_event=self.tx_stop_event,
-                loopback_queue=self.rx_loop_queue,   
             )
 
             self.tx_player = RealtimePlayer(
@@ -459,13 +442,11 @@ class MainWindow(QMainWindow):
                 gain=self.audio_panel.tx_level.value() / 100.0,
             )
 
-            self.rx_worker.start()  
             self.tx_player.start()
             self.tx_worker.start()
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
-
 
     def on_start_rx(self) -> None:
         try:
@@ -565,12 +546,12 @@ class MainWindow(QMainWindow):
             self.rx_queue = None
             self.rx_stop_event = None
             self.rx_output_file = None
-            self.rx_loop_queue = None
 
             self.start_tx_btn.setEnabled(True)
             self.start_rx_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             self.statusBar().showMessage("Остановлено", 3000)
+
 
 if __name__ == "__main__":
     app = QApplication([])
