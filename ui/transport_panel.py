@@ -173,7 +173,7 @@ class TransportPanel(QWidget):
             return
 
         self.selected_save_path = filename
-
+        self.rx_save_btn.setText(Path(filename).name)
     def _clear_rx(self) -> None:
         self.rx_text.clear()
 
@@ -184,3 +184,15 @@ class TransportPanel(QWidget):
 
     def get_source_type(self) -> str:
         return self.source_type.currentText()
+    
+    def get_output_file(self) -> str | None:
+        if self.rx_output_type.currentText() != "Файл":
+            return None
+        return self.selected_save_path
+
+    def set_output_file(self, path: str | None) -> None:
+        self.selected_save_path = path
+        if self.selected_save_path:
+            self.rx_save_btn.setText(Path(self.selected_save_path).name)
+        else:
+            self.rx_save_btn.setText("Сохранить в файл")
